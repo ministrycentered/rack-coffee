@@ -23,21 +23,23 @@ module Rack
     end
     
     def brew(coffee)
-      IO.popen("#{@command} #{coffee}")
+      `#{@command} #{coffee}`
     end
     
     def call(env)
       path = Utils.unescape(env["PATH_INFO"])
       return [403, {"Content-Type" => "text/plain"}, ["Forbidden\n"]] if path.include?('..')
       return @app.call(env) unless urls.any?{|url| path.index(url) == 0} and (path =~ /\.js$/)
+      javascript = F.join(root, path)
       coffee = F.join(root, path.sub(/\.js$/,'.coffee'))
+
       if F.file?(coffee)
-        headers = {"Content-Type" => "application/javascript", "Last-Modified" => F.mtime(coffee).httpdate}
-        if @cache
-          headers['Cache-Control'] = "max-age=#{@ttl}"
-          headers['Cache-Control'] << ', public' if @cache == :public
+        contents = brew(coffee)
+        if !F.exists?(javascript) || F.mtime(javascript) < F.mtime(coffee)
+          F.delete(javascript) if F.exists?(javascript)
+          F.open(javascript, 'wb') { |f| f.write( contents ) }
         end
-        [200, headers, brew(coffee)]
+        @server.call(env)
       else
         @server.call(env)
       end
